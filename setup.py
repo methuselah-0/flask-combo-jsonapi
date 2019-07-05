@@ -28,7 +28,7 @@ setup(
     platforms='any',
     install_requires=['six',
                       'Flask>=0.11',
-                      'marshmallow>=3.0.0a1',
+                      'marshmallow>=3.0.0a1,<=3.0.0rc7',
                       'marshmallow_jsonapi',
                       'apispec>=1.1.1',
                       'sqlalchemy'],
