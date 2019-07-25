@@ -87,3 +87,8 @@ ENV/
 
 # Rope project settings
 .ropeproject
+/.idea/encodings.xml
+/.idea/flask-rest-jsonapi.iml
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/workspace.xml
