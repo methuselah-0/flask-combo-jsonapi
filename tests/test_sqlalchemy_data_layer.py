@@ -28,6 +28,7 @@ import flask_rest_jsonapi.schema
 def base():
     yield declarative_base()
 
+
 @pytest.fixture(scope="module")
 def person_tag_model(base):
     class Person_Tag(base):
@@ -38,6 +39,7 @@ def person_tag_model(base):
         key = Column(String, primary_key=True)
         value = Column(String, primary_key=True)
     yield Person_Tag
+
 
 @pytest.fixture(scope="module")
 def person_single_tag_model(base):
@@ -77,7 +79,11 @@ def string_json_attribute_person_model(base):
 
     # TypeEngine.with_variant says "use StringyJSON instead when
     # connecting to 'sqlite'"
-    MagicJSON = types.JSON().with_variant(StringyJSON, 'sqlite')
+    try:
+        MagicJSON = types.JSON().with_variant(StringyJSON, 'sqlite')
+    except AttributeError:
+        from sqlalchemy.dialects.postgresql import JSON
+        MagicJSON = JSON().with_variant(StringyJSON, 'sqlite')
 
     class StringJsonAttributePerson(base):
 
@@ -90,6 +96,7 @@ def string_json_attribute_person_model(base):
         # while still demonstrating support
         address = Column(MagicJSON)
     yield StringJsonAttributePerson
+
 
 @pytest.fixture(scope="module")
 def person_model(base):
@@ -178,6 +185,7 @@ def dummy_decorator():
         return wrapper_f
     yield deco
 
+
 @pytest.fixture(scope="module")
 def person_tag_schema():
     class PersonTagSchema(MarshmallowSchema):
@@ -188,6 +196,7 @@ def person_tag_schema():
         key = fields.Str()
         value = fields.Str()
     yield PersonTagSchema
+
 
 @pytest.fixture(scope="module")
 def person_single_tag_schema():
@@ -211,6 +220,7 @@ def address_schema():
 
     yield AddressSchema
 
+
 @pytest.fixture(scope="module")
 def string_json_attribute_person_schema(address_schema):
     class StringJsonAttributePersonSchema(Schema):
@@ -233,7 +243,7 @@ def person_schema(person_tag_schema, person_single_tag_schema):
             type_ = 'person'
             self_view = 'api.person_detail'
             self_view_kwargs = {'person_id': '<id>'}
-        id = fields.Integer(as_string=True, dump_only=True, attribute='person_id')
+        id = fields.Integer(as_string=True, attribute='person_id')
         name = fields.Str(required=True)
         birth_date = fields.DateTime()
         computers = Relationship(related_view='api.computer_list',
@@ -245,7 +255,11 @@ def person_schema(person_tag_schema, person_single_tag_schema):
         tags = fields.Nested(person_tag_schema, many=True)
         single_tag = fields.Nested(person_single_tag_schema)
 
-        computers_owned = computers
+        computers_owned = Relationship(related_view='api.computer_list',
+                                       related_view_kwargs={'person_id': '<person_id>'},
+                                       schema='ComputerSchema',
+                                       type_='computer',
+                                       many=True)
 
     yield PersonSchema
 
@@ -428,6 +442,7 @@ def string_json_attribute_person_list(session, string_json_attribute_person_mode
                       'model': string_json_attribute_person_model}
 
     yield StringJsonAttributePersonList
+
 
 @pytest.fixture(scope="module")
 def api_blueprint(client):
@@ -630,6 +645,7 @@ def test_get_list(client, register_routes, person, person_2):
         response = client.get('/persons' + '?' + querystring, content_type='application/vnd.api+json')
         assert response.status_code == 200
 
+
 def test_get_list_with_simple_filter(client, register_routes, person, person_2):
     with client:
         querystring = urlencode({'page[number]': 1,
@@ -640,6 +656,7 @@ def test_get_list_with_simple_filter(client, register_routes, person, person_2):
                                  })
         response = client.get('/persons' + '?' + querystring, content_type='application/vnd.api+json')
         assert response.status_code == 200
+
 
 def test_get_list_disable_pagination(client, register_routes):
     with client:
@@ -678,6 +695,7 @@ def test_post_list(client, register_routes, computer):
         response = client.post('/persons', data=json.dumps(payload), content_type='application/vnd.api+json')
         assert response.status_code == 201
 
+
 def test_post_list_nested_no_join(client, register_routes, computer):
     payload = {
         'data': {
@@ -698,6 +716,7 @@ def test_post_list_nested_no_join(client, register_routes, computer):
         print(response.get_data())
         assert response.status_code == 201
         assert json.loads(response.get_data())['data']['attributes']['address']['street'] == 'test_street'
+
 
 def test_post_list_nested(client, register_routes, computer):
     payload = {
@@ -757,6 +776,7 @@ def test_get_detail(client, register_routes, person):
         response = client.get('/persons/' + str(person.person_id), content_type='application/vnd.api+json')
         assert response.status_code == 200
 
+
 def test_patch_detail(client, register_routes, computer, person):
     payload = {
         'data': {
@@ -793,9 +813,9 @@ def test_patch_detail_nested(client, register_routes, computer, person):
             'attributes': {
                 'name': 'test2',
                 'tags': [
-                    {'key': 'new_key', 'value': 'new_value' }
+                    {'key': 'new_key', 'value': 'new_value'}
                 ],
-                'single_tag': {'key': 'new_single_key', 'value': 'new_single_value' }
+                'single_tag': {'key': 'new_single_key', 'value': 'new_single_value'}
             },
             'relationships': {
                 'computers': {
@@ -818,7 +838,6 @@ def test_patch_detail_nested(client, register_routes, computer, person):
         response_dict = json.loads(response.get_data())
         assert response_dict['data']['attributes']['tags'][0]['key'] == 'new_key'
         assert response_dict['data']['attributes']['single_tag']['key'] == 'new_single_key'
-
 
 
 def test_delete_detail(client, register_routes, person):
@@ -986,19 +1005,31 @@ def test_get_list_response(client, register_routes):
 # test various Accept headers
 def test_single_accept_header(client, register_routes):
     with client:
-        response = client.get('/persons', content_type='application/vnd.api+json', headers={'Accept': 'application/vnd.api+json'})
+        response = client.get(
+            '/persons',
+            content_type='application/vnd.api+json',
+            headers={'Accept': 'application/vnd.api+json'}
+        )
         assert response.status_code == 200
 
 
 def test_multiple_accept_header(client, register_routes):
     with client:
-        response = client.get('/persons', content_type='application/vnd.api+json', headers={'Accept': '*/*, application/vnd.api+json, application/vnd.api+json;q=0.9'})
+        response = client.get(
+            '/persons',
+            content_type='application/vnd.api+json',
+            headers={'Accept': '*/*, application/vnd.api+json, application/vnd.api+json;q=0.9'}
+        )
         assert response.status_code == 200
 
 
 def test_wrong_accept_header(client, register_routes):
     with client:
-        response = client.get('/persons', content_type='application/vnd.api+json', headers={'Accept': 'application/vnd.api+json;q=0.7, application/vnd.api+json;q=0.9'})
+        response = client.get(
+            '/persons',
+            content_type='application/vnd.api+json',
+            headers={'Accept': 'application/vnd.api+json;q=0.7, application/vnd.api+json;q=0.9'}
+        )
         assert response.status_code == 406
 
 
@@ -1129,7 +1160,7 @@ def test_get_list_invalid_filters_val(client, register_routes):
 
 def test_get_list_name(client, register_routes):
     with client:
-        querystring = urlencode({'filter': json.dumps([{'name': 'computers__serial', 'op': 'any', 'val': '1'}])})
+        querystring = urlencode({'filter': json.dumps([{'name': 'computers__serial', 'op': 'ilike', 'val': '%1%'}])})
         response = client.get('/persons' + '?' + querystring, content_type='application/vnd.api+json')
         assert response.status_code == 200
 
@@ -1145,7 +1176,7 @@ def test_get_list_no_op(client, register_routes):
     with client:
         querystring = urlencode({'filter': json.dumps([{'name': 'computers__serial', 'val': '1'}])})
         response = client.get('/persons' + '?' + querystring, content_type='application/vnd.api+json')
-        assert response.status_code == 400
+        assert response.status_code == 500
 
 
 def test_get_list_attr_error(client, register_routes):
@@ -1421,7 +1452,7 @@ def test_patch_detail_wrong_id(client, register_routes, computer, person):
         response = client.patch('/persons/' + str(person.person_id),
                                 data=json.dumps(payload),
                                 content_type='application/vnd.api+json')
-        assert response.status_code == 400
+        assert response.status_code == 422
 
 
 def test_post_relationship_no_data(client, register_routes, computer, person):
