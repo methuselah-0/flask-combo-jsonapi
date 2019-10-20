@@ -29,7 +29,7 @@ The fork adds/improves upon the following:
 
         - :code:`name` - the name of a group
 
-3. Sorting has been improved. Now a 'deep' sort is available which follows the same principle as the 'deep' filters.
+3. Sorting has been improved. Now a 'deep' sort is available which allows for sorting by related entities with any depth.
 4. Added validation and deserialization for values that can be used as filters.
 5. Custom fields can now have custom methods for filtering and sorting. More on that below.
 6. Added support for plugins (`More on that here <docs/plugins/create_plugins.rst>`_).
